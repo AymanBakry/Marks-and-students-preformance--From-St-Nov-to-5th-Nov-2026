@@ -11,9 +11,10 @@ const FIELDS = [
   { col: 5, label: "المذكرة", max: 10, icon: "📓" },
   { col: 6, label: "المهمة 1", max: 5, icon: "✏️" },
   { col: 7, label: "المهمة 2", max: 5, icon: "📌" },
+  { col: 8, label: "كتابة الفقرة 2", max: 10, icon: "🖋️" },
 ];
-const REPORT_COL = 9; // عمود التقرير التربوي (J)
-const TOTAL_MAX = FIELDS.reduce((s, f) => s + f.max, 0); // 60
+const REPORT_COL = 10; // عمود التقرير التربوي (K)
+const TOTAL_MAX = FIELDS.reduce((s, f) => s + f.max, 0); // 70
 
 // مستويات الأداء (النسبة المئوية) وما يناسب كل مستوى من رسم متحرك ورسالة
 const TIERS = [
@@ -70,6 +71,104 @@ const num = v => { const n = parseFloat(String(v).replace(/[^\d.]/g, "")); retur
 const clean = s => String(s || "").replace(/\s+/g, " ").trim();
 const fmt = n => (Math.round(n * 10) / 10).toString();
 
+
+// ===== التقرير التربوي =====
+// كل موضوع يُكتشف من نص المعلم ويظهر ببطاقة متحركة بلون يناسب معناه
+const TOPICS = [
+  { re: /مستوى أكاديمي ممتاز|مجتهد/, icon: "🏅", anim: "star", color: "#16a34a", title: "مجتهد ومتميز", text: "يبذل جهدًا مشكورًا ومستواه الأكاديمي مشرّف." },
+  { re: /يُستحسن|يستحسن|العناية بالدراسة/, icon: "📚", anim: "bob", color: "#ea580c", title: "عناية أكبر بالدراسة", text: "يحتاج إلى مزيد من الاهتمام والمراجعة المنتظمة." },
+  { re: /المذكر|الورك بوك|الواجبات/, icon: "✏️", anim: "write", color: "#d97706", title: "المذكرة والواجبات", text: "يُرجى متابعة حل تمارين المذكرة وإنجاز الواجبات." },
+  { re: /Reading|Speaking|Teams/i, icon: "🎧", anim: "pulse", color: "#2563eb", title: "أنشطة Teams", text: "متابعة أنشطة Reading وSpeaking على منصة Teams." },
+  { re: /سلوك (ممتاز|ملتزم)|حريص على الانضباط/, icon: "🌟", anim: "twinkle", color: "#16a34a", title: "سلوك مشرّف", text: "ملتزم ومنضبط ومتعاون داخل الصف." },
+  { re: /سجل تحس|تحسناً ملحوظ|تحسنا ملحوظ|تحسن ملحوظ/, icon: "📈", anim: "rise", color: "#0d9488", title: "تحسّن ملحوظ", text: "سجّل تقدمًا واضحًا في الالتزام بتعليمات الصف." },
+  { re: /تعزيز التركيز|المشتتات/, icon: "🎯", anim: "pulse", color: "#7c3aed", title: "تعزيز التركيز", text: "يحتاج إلى تقليل المشتتات وتوجيه طاقته نحو التحصيل." },
+  { re: /المزاح|احترام لقواعد|رفض النصح|الجلوس علي المقعد/, icon: "🤝", anim: "shake", color: "#CE1126", title: "قواعد الصف", text: "يُرجى الالتزام بقواعد الحصة والتعاون مع توجيهات المعلم." },
+  { re: /رفع الصوت|الصراخ/, icon: "🤫", anim: "shake", color: "#be185d", title: "الهدوء في الحصة", text: "يُرجى تجنب رفع الصوت أثناء الدرس." },
+  { re: /الحمام|الاستئذان|الالحاح للخروج/, icon: "🚪", anim: "swing", color: "#64748b", title: "البقاء في الصف", text: "يُرجى تقليل الخروج المتكرر أثناء الحصة." },
+];
+
+const REPORT_CSS = `
+.rbtn{display:block;width:100%;margin-top:14px;padding:16px;font:inherit;font-weight:900;font-size:1.15rem;color:#fff;border:0;border-radius:16px;cursor:pointer;background:linear-gradient(135deg,var(--a),var(--b));box-shadow:0 6px 18px color-mix(in srgb,var(--a) 50%,transparent);animation:rglow 2s ease-in-out infinite}
+@keyframes rglow{50%{transform:scale(1.025);box-shadow:0 10px 26px color-mix(in srgb,var(--b) 55%,transparent)}}
+.rmodal{position:fixed;inset:0;z-index:99;background:rgba(15,23,42,.6);overflow:auto;padding:12px;display:none;backdrop-filter:blur(3px)}
+.rmodal.open{display:block}
+.rwrap{position:relative;max-width:720px;margin:10px auto 30px;background:#fff7ed;border-radius:22px;overflow:hidden;box-shadow:0 20px 50px rgba(0,0,0,.4);animation:rup .45s cubic-bezier(.2,.9,.3,1.1)}
+@keyframes rup{from{opacity:0;transform:translateY(60px) scale(.96)}}
+.rclose{position:absolute;top:10px;left:10px;z-index:5;width:38px;height:38px;border-radius:50%;border:0;padding:0;background:rgba(0,0,0,.35);color:#fff;font-size:1.2rem;cursor:pointer;box-shadow:none;animation:none}
+.rbody{padding:16px}
+.rsec{background:#fff;border-radius:18px;padding:14px;margin-bottom:14px;border-right:7px solid var(--a);box-shadow:0 4px 14px rgba(0,0,0,.07);animation:pop .5s ease both}
+.rsec.rb{border-color:var(--b)}
+.rsec h4{margin:0 0 8px;font-weight:900;font-size:1.15rem;color:var(--navy)}
+.rsec>p{margin:0 0 10px;font-weight:600;line-height:1.9;unicode-bidi:plaintext;background:#f8fafc;border-radius:12px;padding:10px 12px}
+.tcards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.tc{--k:#6b7280;text-align:center;border-radius:16px;padding:12px 10px;background:color-mix(in srgb,var(--k) 11%,#fff);border:2px solid color-mix(in srgb,var(--k) 38%,#fff);animation:pop .5s ease both}
+.tc .ico{display:inline-block;font-size:2.5rem;line-height:1.2}
+.tc b{display:block;color:var(--k);font-weight:900;margin:2px 0}
+.tc p{margin:0;font-size:.85rem;font-weight:600;color:#475569}
+.r-star{animation:rstar 3s ease-in-out infinite}@keyframes rstar{50%{transform:rotate(14deg) scale(1.2)}}
+.r-bob{animation:rbob 1.6s ease-in-out infinite}@keyframes rbob{50%{transform:translateY(-9px)}}
+.r-write{animation:rwrite 1.2s ease-in-out infinite}@keyframes rwrite{25%{transform:translate(-5px,3px) rotate(-12deg)}75%{transform:translate(5px,-2px) rotate(8deg)}}
+.r-pulse{animation:rpulse 1.5s ease-in-out infinite}@keyframes rpulse{50%{transform:scale(1.22)}}
+.r-twinkle{animation:rtw 1.8s ease-in-out infinite}@keyframes rtw{50%{transform:scale(1.25) rotate(20deg);filter:brightness(1.3)}}
+.r-rise{animation:rrise 2s ease-in-out infinite}@keyframes rrise{0%{transform:translate(-6px,6px)}100%{transform:translate(6px,-6px)}}
+.r-shake{animation:rshake .9s ease-in-out infinite}@keyframes rshake{25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+.r-swing{animation:rswing 2s ease-in-out infinite;transform-origin:0 50%}@keyframes rswing{50%{transform:rotate(-25deg)}}
+.rfoot{text-align:center;background:linear-gradient(135deg,color-mix(in srgb,var(--a) 14%,#fff),color-mix(in srgb,var(--b) 12%,#fff));border-radius:18px;padding:14px;font-weight:800}
+.rfoot small{display:block;color:#64748b;font-weight:600;margin-top:4px}
+.racts{display:flex;gap:8px;justify-content:center;margin-top:12px}
+.racts button{padding:10px 20px;font-size:.95rem;animation:none}
+.racts .gray{background:#64748b;box-shadow:none}
+@media print{body>*:not(#rmodal){display:none!important}.rmodal{position:static;background:none;padding:0;display:block!important}.rclose,.racts{display:none}.rwrap{box-shadow:none;animation:none;margin:0}*{animation:none!important}}
+`;
+
+function topicCards(text) {
+  const list = TOPICS.filter(t => t.re.test(text));
+  if (!list.length) return "";
+  return `<div class="tcards">${list.map((t, i) => `<div class="tc" style="--k:${t.color};animation-delay:${0.15 + i * 0.12}s"><span class="ico r-${t.anim}">${t.icon}</span><b>${t.title}</b><p>${t.text}</p></div>`).join("")}</div>`;
+}
+
+// يبني صفحة التقرير (null إذا لا يوجد تقرير للطالب)
+function reportHTML(r, tier, name, pct) {
+  const parts = String(r[REPORT_COL] || "").split("|").map(clean).filter(Boolean);
+  if (!parts.length) return null;
+  const sec = (icon, title, text, cls, d) => `<div class="rsec ${cls}" style="animation-delay:${d}s"><h4>${icon} ${title}</h4><p>${esc(text)}</p>${topicCards(text)}</div>`;
+  const body = parts.length === 1
+    ? sec("📝", "ملاحظات المعلمين", parts[0], "ra", 0.1)
+    : sec("📘", "الأداء الأكاديمي", parts[0], "ra", 0.1) + sec("🌟", "الأداء السلوكي والانضباط الصفي", parts.slice(1).join(" - "), "rb", 0.3);
+  return `<div class="${tier.cls}"><div class="rwrap">
+    <button class="rclose" data-close aria-label="إغلاق">✕</button>
+    <div class="banner"><div class="conf"></div>
+      <div class="btxt"><span class="badge">📋 التقرير التربوي</span><h2>${esc(name)}</h2><span class="seat">${tier.badge} • ${pct}%</span></div>
+      <div class="scene">${SCENES[tier.scene]}</div></div>
+    <div class="rbody">${body}
+      <div class="rfoot">${tier.msg}<small>مع تمنياتنا بدوام التوفيق والنجاح 🌹 — إدارة مدرسة البلاد القديم الابتدائية الإعدادية</small></div>
+      <div class="racts"><button data-print>🖨️ طباعة / حفظ PDF</button><button class="gray" data-close>إغلاق</button></div>
+    </div></div></div>`;
+}
+
+function openReport(html, tier) {
+  const m = document.getElementById("rmodal");
+  m.innerHTML = html;
+  m.classList.add("open");
+  document.body.style.overflow = "hidden";
+  m.scrollTop = 0;
+  if (tier.confetti) confetti(m.querySelector(".conf"));
+}
+function closeReport() {
+  const m = document.getElementById("rmodal");
+  m.classList.remove("open"); m.innerHTML = "";
+  document.body.style.overflow = "";
+}
+function initReport() {
+  const st = document.createElement("style"); st.textContent = REPORT_CSS; document.head.appendChild(st);
+  const m = document.createElement("div"); m.id = "rmodal"; m.className = "rmodal"; document.body.appendChild(m);
+  m.addEventListener("click", e => {
+    if (e.target === m || e.target.closest("[data-close]")) closeReport();
+    else if (e.target.closest("[data-print]")) window.print();
+  });
+  document.addEventListener("keydown", e => { if (e.key === "Escape") closeReport(); });
+}
+
 async function loadData() {
   if (rows) return rows;
   const res = await fetch(URL_CSV);
@@ -101,34 +200,39 @@ function show(r) {
   const box = document.getElementById("student");
   const name = clean(r[1]);
 
-  // الدرجات والمجموع (يُحسب من الدرجات نفسها)
+  // الدرجات والمجموع (يُحسب من الدرجات نفسها). النص مثل "غائب" أو "محاولة غش" يظهر كحالة ولا يُحسب
   const items = FIELDS.map(f => {
-    const n = num(r[f.col]);
-    return { ...f, n, ratio: n === null ? 0 : Math.min(1, n / f.max) };
+    const raw = clean(r[f.col]);
+    const n = /\d/.test(raw) ? num(raw) : null;
+    return { ...f, n, status: n === null ? raw : "", ratio: n === null ? 0 : Math.min(1, n / f.max) };
   });
   const total = items.reduce((s, x) => s + (x.n || 0), 0);
   const pct = Math.min(100, Math.round(total / TOTAL_MAX * 100));
   const tier = TIERS.find(t => pct >= t.min);
 
-  // نقطة القوة وفرصة التطوير
-  const best = items.reduce((a, b) => (b.ratio > a.ratio ? b : a));
-  const worst = items.reduce((a, b) => (b.ratio < a.ratio ? b : a));
+  // نقطة القوة وفرصة التطوير (من الدرجات المسجلة فقط)
+  const valid = items.filter(x => x.n !== null);
   let chips = "";
-  if (best.ratio > 0) chips += `<span class="chip cs">⭐ نقطة القوة: ${esc(best.label)}</span>`;
-  if (worst.ratio < 1 && worst !== best) chips += `<span class="chip ci2">🎯 فرصة للتطوير: ${esc(worst.label)}</span>`;
+  if (valid.length) {
+    const best = valid.reduce((a, b) => (b.ratio > a.ratio ? b : a));
+    const worst = valid.reduce((a, b) => (b.ratio < a.ratio ? b : a));
+    if (best.ratio > 0) chips += `<span class="chip cs">⭐ نقطة القوة: ${esc(best.label)}</span>`;
+    if (worst.ratio < 1 && worst !== best) chips += `<span class="chip ci2">🎯 فرصة للتطوير: ${esc(worst.label)}</span>`;
+  }
 
   const tiles = items.map((x, i) => {
+    const d = `style="animation-delay:${i * 0.08}s"`;
+    if (x.status) {
+      const cheat = /غش/.test(x.status);
+      return `<div class="tile ${cheat ? "g3" : "g0"}" ${d}><div class="ti">${cheat ? "⚠️" : "🚫"}</div><div class="tl">${esc(x.label)}</div><div class="tv"><b style="font-size:1.15rem">${esc(x.status)}</b></div></div>`;
+    }
     const cls = x.n === null ? "g0" : x.ratio >= 0.85 ? "g1" : x.ratio >= 0.6 ? "g2" : "g3";
-    return `<div class="tile ${cls}" style="animation-delay:${i * 0.08}s"><div class="ti">${x.icon}</div><div class="tl">${esc(x.label)}</div>
+    return `<div class="tile ${cls}" ${d}><div class="ti">${x.icon}</div><div class="tl">${esc(x.label)}</div>
       <div class="tv"><b>${x.n === null ? "-" : esc(fmt(x.n))}</b><span> / ${x.max}</span></div>
       <div class="bar"><i data-w="${x.ratio * 100}"></i></div></div>`;
   }).join("");
 
-  // التقرير التربوي: الجزء الأول أكاديمي والثاني سلوكي (يفصل بينهما الرمز |)
-  const parts = String(r[REPORT_COL] || "").split("|").map(clean).filter(Boolean);
-  let comments = "";
-  if (parts[0]) comments += `<div class="comment"><span class="cic">📘</span><div><b>الأداء الأكاديمي</b><p>${esc(parts[0])}</p></div></div>`;
-  if (parts[1]) comments += `<div class="comment b"><span class="cic">🌟</span><div><b>الأداء السلوكي والانضباط الصفي</b><p>${esc(parts.slice(1).join(" - "))}</p></div></div>`;
+  const rep = reportHTML(r, tier, name, pct);
 
   box.innerHTML = `
   <div class="${tier.cls}">
@@ -141,15 +245,17 @@ function show(r) {
       <div class="msgbox">${tier.msg}</div>
       <div class="chips">${chips}</div>
       <div class="tiles">${tiles}</div>
-      ${comments}
       <div class="totalbox">
         <div class="ring" style="--p:0"><div><span><span class="num">0</span><small>من ${TOTAL_MAX}</small></span></div></div>
         <div><h4>المجموع الكلي: ${pct}%</h4><p>${tier.badge}</p></div>
       </div>
+      ${rep ? '<button class="rbtn" id="rbtn">📋 عرض التقرير التربوي للطالب</button>' : ""}
     </div>
   </div>`;
   box.classList.remove("hidden");
   if (tier.confetti) confetti(box.querySelector(".conf"));
+  const rb = box.querySelector("#rbtn");
+  if (rb) rb.onclick = () => openReport(rep, tier);
   box.scrollIntoView({ behavior: "smooth", block: "start" });
 
   requestAnimationFrame(() => requestAnimationFrame(() => {
@@ -177,5 +283,6 @@ async function search() {
   }
 }
 
+initReport();
 document.getElementById("btn").addEventListener("click", search);
 document.getElementById("seat").addEventListener("keydown", e => { if (e.key === "Enter") search(); });
